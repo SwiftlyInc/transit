@@ -210,7 +210,13 @@ message TripUpdate {
     optional StopTimeEvent arrival = 2;
     optional StopTimeEvent departure = 3;
 
-    // The relation between this StopTime and the static schedule.
+    // Expected occupancy after departure from the given stop.
+    // Should be provided only for future stops.
+    // In order to provide departure_occupancy_status without either arrival or
+    // departure StopTimeEvents, ScheduleRelationship should be set to NO_DATA. 
+    optional VehiclePosition.OccupancyStatus departure_occupancy_status = 7;
+    
+    // The relation between the StopTimeEvents and the static schedule.
     enum ScheduleRelationship {
       // The vehicle is proceeding in accordance with its static schedule of
       // stops, although not necessarily according to the times of the schedule.
@@ -222,12 +228,16 @@ message TripUpdate {
 
       // The stop is skipped, i.e., the vehicle will not stop at this stop.
       // Arrival and departure are optional.
-      SKIPPED = 1;
+      // NOTE: This field is being deprecated. Users should use `MODIFIED` along with
+      // pickup_type=NO_PICKUP and drop_off_type=NO_DROP_OFF instead for when a
+      // vehicle will not serve a regularly scheduled stop
+      SKIPPED = 1 [deprecated=true];
 
-      // No data is given for this stop. The main intention for this value is to
-      // give the predictions only for part of a trip, i.e., if the last update
-      // for a trip has a NO_DATA specifier, then StopTimes for the rest of the
-      // stops in the trip are considered to be unspecified as well.
+      // No StopTimeEvents are given for this stop.
+      // The main intention for this value is to give time predictions only for
+      // part of a trip, i.e., if the last update for a trip has a NO_DATA
+      // specifier, then StopTimeEvents for the rest of the stops in the trip
+      // are considered to be unspecified as well.
       // Neither arrival nor departure should be supplied.
       NO_DATA = 2;
 
@@ -238,6 +248,14 @@ message TripUpdate {
       // NOTE: This field is still experimental, and subject to change. It may be
       // formally adopted in the future.
       UNSCHEDULED = 3;
+
+      // A schedule-based vehicle's StopTimeProperties differs from the static schedule in a way that impacts
+      // the rider experience, such as a vehicle not picking up passengers because a vehicle is "drop-off only"
+      // to catch up back to schedule when it's running late. StopTimeProperties must included to specify how
+      // the relationship has been modified.
+      // NOTE: This field is still experimental, and subject to change. It may be
+      // formally adopted in the future.
+      MODIFIED = 4; 
     }
     optional ScheduleRelationship schedule_relationship = 5
         [default = SCHEDULED];
@@ -259,6 +277,54 @@ message TripUpdate {
       // (e.g., `VehiclePosition.stop_id`).
       // NOTE: This field is still experimental, and subject to change. It may be formally adopted in the future.
       optional string assigned_stop_id = 1;
+
+      // Supports real-time changes to pickup_type when it differs from what's specified in (CSV) GTFS
+      // in stop_times.txt. See definition of stop_times.pickup_type in (CSV) GTFS. 
+      // If pickup_type is specified, StopTimeUpdate.schedule_relationship must be MODIFIED for schedule-based service.
+      // NOTE: This field is still experimental, and subject to change. It may be formally adopted in the future.
+      optional PickupType pickup_type = 2;
+
+      // Supports real-time changes to drop_off_type when it differs from what's specified in (CSV) GTFS
+      // in stop_times.txt. See definition of stop_times.drop_off_type in (CSV) GTFS.
+      // If drop_off_type is specified, StopTimeUpdate.schedule_relationship must be MODIFIED for scheduled-based service.
+      // NOTE: This field is still experimental, and subject to change. It may be formally adopted in the future.
+      optional DropOffType drop_off_type = 3;
+
+      // Indicates the pickup method for an updated stop time when it differs from what's specified in (CSV) GTFS
+      // in stop_times.txt. By default, if pickup_type is neither specified in real-time or in (CSV) GTFS, it is
+      // considered REGULAR_PICKUP.
+      // NOTE: This field is still experimental, and subject to change. It may be formally adopted in the future.
+      enum PickupType {
+        // See definition of stop_times.pickup_type=0 in (CSV) GTFS.
+        REGULAR_PICKUP = 0;
+
+        // See definition of stop_times.pickup_type=1 in (CSV) GTFS.
+        NO_PICKUP = 1;
+
+        // See definition of stop_times.pickup_type=2 in (CSV) GTFS.
+        MUST_PHONE_AGENCY_PICKUP = 2;
+
+        // See definition of stop_times.pickup_type=3 in (CSV) GTFS.
+        MUST_ASK_DRIVER_PICKUP = 3;
+      }
+
+      // Indicates the drop off method for an updated stop time when it differs from what's specified in (CSV) GTFS
+      // in stop_times.txt. By default, if drop_off_type is neither specified in real-time or in (CSV) GTFS, it is
+      // considered REGULAR_DROP_OFF.
+      // NOTE: This field is still experimental, and subject to change. It may be formally adopted in the future.
+      enum DropOffType {
+        // See definition of stop_times.drop_off_type=0 in (CSV) GTFS.
+        REGULAR_DROP_OFF = 0;
+
+        // See definition of stop_times.drop_off_type=1 in (CSV) GTFS.
+        NO_DROP_OFF = 1;
+
+        // See definition of stop_times.drop_off_type=2 in (CSV) GTFS.
+        MUST_PHONE_AGENCY_DROP_OFF = 2;
+
+        // See definition of stop_times.drop_off_type=3 in (CSV) GTFS.
+        MUST_ASK_DRIVER_DROP_OFF = 3;
+      }
 
       // The extensions namespace allows 3rd-party developers to extend the
       // GTFS Realtime Specification in order to add and evaluate new features
@@ -303,7 +369,9 @@ message TripUpdate {
   // - stop_sequences 10,... have unknown delay.
   repeated StopTimeUpdate stop_time_update = 2;
 
-  // Moment at which the vehicle's real-time progress was measured. In POSIX
+  // The most recent moment at which the vehicle's real-time progress was measured
+  // to estimate StopTimes in the future. When StopTimes in the past are provided,
+  // arrival/departure times may be earlier than this value. In POSIX
   // time (i.e., the number of seconds since January 1st 1970 00:00:00 UTC).
   optional uint64 timestamp = 4;
 
